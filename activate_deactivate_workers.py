@@ -1,0 +1,186 @@
+import requests
+import json
+import slack
+import os
+from dotenv import load_dotenv
+import logging
+import time
+import argparse
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    filename="runpod_activate_deactivate.log",
+    filemode="a",
+)
+
+api_key = os.environ.get("API_KEY")
+slack_channel = "runpod_mia_alerts"
+slack_runpod_alert_token = os.environ.get("SLACK_RUNPOD_ALERT_TOKEN")
+
+client = slack.WebClient(slack_runpod_alert_token)
+url = f"https://api.runpod.io/graphql?api_key={api_key}"
+headers = {"content-type": "application/json"}
+
+target_endpoints = [
+    "US_NNA_Summarization_Production -fb",
+    "US_NNA_Smart-reply_Production -fb",
+    "US_NNA_NEW_Pickup_Intent_Production -fb",
+]
+
+get_endpoint_query = {
+    "query": """
+    query Endpoints {
+        myself {
+            endpoints {
+                gpuIds
+                id
+                name
+                templateId
+                workersMax
+                workersMin
+            }
+        }
+    }
+    """
+}
+
+
+def send_slack_notification(message):
+    try:
+        client.chat_postMessage(channel=slack_channel, text=message)
+    except slack.errors.SlackApiError as e:
+        if e.response["error"] == "not_in_channel":
+            # Attempt to join the channel first
+            try:
+                client.conversations_join(channel=slack_channel)
+                client.chat_postMessage(channel=slack_channel, text=message)
+            except slack.errors.SlackApiError as join_error:
+                print(
+                    f"Failed to join and send message: {join_error.response['error']}"
+                )
+        else:
+            print(f"Slack API Error: {e.response['error']}")
+
+def send_post_request_to_runpod(query):
+
+    result = {"data": None, "error_message": ""}
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(query))
+        response.raise_for_status()
+
+        if response.status_code == 200:
+            result["data"] = response.json()
+
+        return result
+
+    except requests.exceptions.HTTPError as e:
+        logging.critical(f"HTTP Error happend: {str(e)}")
+        result["error_message"] = str(e)
+        return result
+
+    except requests.exceptions.ConnectionError as e:
+        logging.critical(f"HTTP Connection error happend: {str(e)}")
+        result["error_message"] = str(e)
+        return result
+
+    except requests.exceptions.Timeout as e:
+        logging.critical(f"Timeout error happend: {str(e)}")
+        result["error_message"] = str(e)
+        return result
+
+    except requests.exceptions.RequestException as e:
+        logging.critical(f"Timeout error happend: {str(e)}")
+        result["error_message"] = str(e)
+        return result
+
+def get_data():
+
+    result = send_post_request_to_runpod(get_endpoint_query)
+    # print(result)
+
+    if result["data"]:
+        endpoints = result["data"]["data"]["myself"]["endpoints"]
+        return endpoints
+    else:
+        error_message = result["error_message"]
+        error_message = (
+            "Error during getting endpoints data for activating the endpoints: "
+            + error_message
+        )
+        send_slack_notification(error_message)
+        logging.critical(error_message)
+        print(error_message)
+
+def update_workers(action, workersMin):
+
+    endpoints = get_data()
+
+    for endpoint in endpoints:
+        endpoint_name = endpoint.get("name", "")
+        if endpoint_name in target_endpoints:
+            endpoint_id = endpoint.get("id")
+            endpoint_gpuids = endpoint.get("gpuIds")
+
+            update_query = {
+                "query": f"""
+                mutation {{
+                    saveEndpoint(input: {{
+                        gpuIds: "{endpoint_gpuids}",
+                        id: "{endpoint_id}",
+                        name: "{endpoint_name}",
+                        workersMin: {workersMin}
+                    }}) {{
+                        id
+                    }}
+                }}
+                """
+            }
+            result = send_post_request_to_runpod(update_query)
+            print(result)
+
+            if result["data"]:
+                message = f"*{action}*: Active worker set to `{workersMin}` for the endpoint: `{endpoint_name}`"
+                send_slack_notification(message)
+
+            else:
+                error_message = result["error_message"]
+                error_message = (
+                    f"*{action}*: Failed during the setting active worker to `{workersMin}` for `{endpoint_name}`: "
+                    + error_message
+                )
+                send_slack_notification(error_message)
+                logging.critical(error_message)
+
+if __name__ == "__main__":
+    try:
+        # Create the parser
+        parser = argparse.ArgumentParser(
+            description="Script to activate or deactivate workers."
+        )
+
+        # Add the 'action' argument
+        parser.add_argument(
+            "action",
+            choices=["activate", "deactivate"],  # Restrict to valid choices
+            help="The action to perform. Choose 'activate' to activate workers or 'deactivate' to deactivate them.",
+        )
+
+        # Parse the arguments
+        args = parser.parse_args()
+
+        if args.action == "activate":
+            workersMin = 1
+        elif args.action == "deactivate":
+            workersMin = 0
+        else:
+            raise RuntimeError(f"Unknown action: {args.action}")
+
+        update_workers(args.action, workersMin)
+
+    except Exception as e:
+        print(f"An unexpected error occurred during: {e}")
