@@ -37,11 +37,19 @@ get_endpoint_query = {
         myself {
             endpoints {
                 gpuIds
+                gpuCount
+                allowedCudaVersions
                 id
+                idleTimeout
+                locations
                 name
+                networkVolumeId
+                scalerType
+                scalerValue
                 templateId
                 workersMax
                 workersMin
+                executionTimeoutMs
             }
         }
     }
@@ -65,8 +73,8 @@ def send_slack_notification(message):
         else:
             print(f"Slack API Error: {e.response['error']}")
 
-def send_post_request_to_runpod(query):
 
+def send_post_request_to_runpod(query):
     result = {"data": None, "error_message": ""}
 
     try:
@@ -98,8 +106,8 @@ def send_post_request_to_runpod(query):
         result["error_message"] = str(e)
         return result
 
-def get_data():
 
+def get_data():
     result = send_post_request_to_runpod(get_endpoint_query)
     # print(result)
 
@@ -116,30 +124,67 @@ def get_data():
         logging.critical(error_message)
         print(error_message)
 
-def update_workers(action, workersMin):
 
+def update_workers(action, workersMin):
     endpoints = get_data()
 
     for endpoint in endpoints:
         endpoint_name = endpoint.get("name", "")
         if endpoint_name in target_endpoints:
-            endpoint_id = endpoint.get("id")
             endpoint_gpuids = endpoint.get("gpuIds")
+            endpoint_gpucount = endpoint.get("gpuCount")
+            endpoint_allowedcudaversions = endpoint.get("allowedCudaVersions")
+            endpoint_id = endpoint.get("id")
+            endpoint_idletimeout = endpoint.get("idleTimeout")
+            endpoint_locations = endpoint.get("locations")
+            endpoint_networkvolumeid = endpoint.get("networkVolumeId")
+            endpoint_scalertype = endpoint.get("scalerType")
+            endpoint_scalervalue = endpoint.get("scalerValue")
+            endpoint_templateid = endpoint.get("templateId")
+            endpoint_workersmax = endpoint.get("workersMax")
+            endpoint_executiontimeoutms = endpoint.get("executionTimeoutMs")
 
             update_query = {
-                "query": f"""
-                mutation {{
-                    saveEndpoint(input: {{
-                        gpuIds: "{endpoint_gpuids}",
-                        id: "{endpoint_id}",
-                        name: "{endpoint_name}",
-                        workersMin: {workersMin}
-                    }}) {{
-                        id
-                    }}
-                }}
-                """
+                "operationName": "saveEndpoint",
+                "variables": {
+                    "input": {
+                        "gpuIds": endpoint_gpuids,
+                        "gpuCount": endpoint_gpucount,
+                        "allowedCudaVersions": endpoint_allowedcudaversions,
+                        "id": endpoint_id,
+                        "idleTimeout": endpoint_idletimeout,
+                        "locations": endpoint_locations,
+                        "name": endpoint_name,
+                        "networkVolumeId": endpoint_networkvolumeid,
+                        "scalerType": endpoint_scalertype,
+                        "scalerValue": endpoint_scalervalue,
+                        "workersMax": endpoint_workersmax,
+                        "workersMin": workersMin,
+                        "executionTimeoutMs": endpoint_executiontimeoutms,
+                    }
+                },
+                "query": """
+                    mutation saveEndpoint($input: EndpointInput!) {
+                        saveEndpoint(input: $input) {
+                            gpuIds
+                            id
+                            idleTimeout
+                            locations
+                            name
+                            networkVolumeId
+                            scalerType
+                            scalerValue
+                            templateId
+                            userId
+                            workersMax
+                            workersMin
+                            gpuCount
+                            __typename
+                        }
+                    }
+                """,
             }
+
             result = send_post_request_to_runpod(update_query)
             print(result)
 
@@ -155,6 +200,7 @@ def update_workers(action, workersMin):
                 )
                 send_slack_notification(error_message)
                 logging.critical(error_message)
+
 
 if __name__ == "__main__":
     try:
