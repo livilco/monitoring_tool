@@ -6,6 +6,7 @@ import time
 import slack
 import os
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -38,11 +39,23 @@ def send_request_to_mia(
     try:
         response = requests.post(full_url, auth=HTTPBasicAuth(username, password), json=data, timeout=timeout)
         response.raise_for_status()
-        if response.status_code == 200:
+        response_str = json.dumps(response.json())
+        # When the request is in 'IN_QUEUE' or 'IN_PROGRESS' state on the runpod side for a
+        # very long time then the backend sends HTTP 200 with the error message.
+        # For now to capture such scenario a simple string matching will work.
+        # Once the 'error' key is added to JSON response for all the tasks then
+        # below logic we have to change the below logic.
+        if response.status_code == 200 and "Failed. status code:" not in response_str:
             logging.info(f"Response: {response.json()}")
             print(f"Response: {response.json()}")
             result['is_success'] = True
             result['error_message'] = ""
+            return result
+        else:
+            logging.info(f"Response: {response_str}")
+            print(f"Response: {response_str}")
+            result['is_success'] = False
+            result['error_message'] = response_str
             return result
 
     except requests.exceptions.HTTPError as e:
