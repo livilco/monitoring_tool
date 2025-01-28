@@ -1,0 +1,14 @@
+[Unit]
+Description=Start tmux sessions for monitoring scripts
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/start_monitoring_on_reboot.sh
+RemainAfterExit=yes
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+
+[Install]
+WantedBy=multi-user.target
+
