@@ -6,6 +6,9 @@ import requests
 from requests.auth import HTTPBasicAuth
 import logging
 import time
+from datetime import datetime
+import boto3
+import botocore.exceptions
 
 load_dotenv()
 
@@ -20,147 +23,58 @@ logging.basicConfig(
 api_key = os.environ.get("API_KEY")
 slack_channel = "runpod_mia_alerts"
 slack_runpod_alert_token = os.environ.get("SLACK_RUNPOD_ALERT_TOKEN")
-runpod_balance_threshold = float(os.environ.get("RUNPOD_BALANCE_THRESHOLD"))
+soft_threshold = float(os.environ.get("SOFT_THRESHOLD"))
+hard_threshold = float(os.environ.get("HARD_THRESHOLD"))
+lfmh_kill_switch_arn = os.environ.get("LFMH_KILL_SWITCH_ARN")
+nna_kill_switch_arn = os.environ.get("NNA_KILL_SWITCH_ARN")
+
+lfmh_rule_priority_and_arn = [
+      {
+      'RuleArn': lfmh_kill_switch_arn,
+      'Priority': 1
+      }
+]
+
+nna_rule_priority_and_arn = [
+      {
+      'RuleArn': nna_kill_switch_arn,
+      'Priority': 1
+      }
+]
 
 client = slack.WebClient(slack_runpod_alert_token)
 
 url = f"https://api.runpod.io/graphql?api_key={api_key}"
 headers = {"content-type": "application/json"}
 
-query = {
-    "operationName": "myPods",
-    "variables": {},
-    "query": """query myPods {
-      myself {
-        id
-        clientBalance
-        savingsPlans {
-          startTime
-          endTime
-          gpuTypeId
-          podId
-          costPerHr
-          __typename
+billing_summary_query = {
+    "operationName": "getUserBillingSummary",
+    "variables": {
+        "input": {
+            "granularity": "DAILY"
         }
-        pods {
-          savingsPlans {
-            gpuTypeId
-            endTime
-            costPerHr
-            __typename
-          }
-          clusterId
-          containerDiskInGb
-          containerRegistryAuthId
-          costPerHr
-          adjustedCostPerHr
-          desiredStatus
-          dockerArgs
-          dockerId
-          env
-          gpuCount
-          id
-          imageName
-          lastStatusChange
-          locked
-          machineId
-          memoryInGb
-          name
-          networkVolume {
-            id
-            name
-            size
-            __typename
-          }
-          ipAddress {
-            address
-            __typename
-          }
-          cpuFlavorId
-          machineType
-          cpuFlavor {
-            groupName
-            displayName
-            __typename
-          }
-          podType
-          port
-          ports
-          templateId
-          uptimeSeconds
-          vcpuCount
-          version
-          volumeEncrypted
-          volumeInGb
-          volumeMountPath
-          machine {
-            costPerHr
-            currentPricePerGpu
-            diskMBps
-            gpuAvailable
-            gpuDisplayName
-            location
-            maintenanceEnd
-            maintenanceNote
-            maintenanceStart
-            minPodGpuCount
-            maxDownloadSpeedMbps
-            maxUploadSpeedMbps
-            note
-            podHostId
-            secureCloud
-            supportPublicIp
-            gpuTypeId
-            globalNetwork
-            gpuType {
-              secureSpotPrice
-              communitySpotPrice
-              oneMonthPrice
-              threeMonthPrice
-              sixMonthPrice
+    },
+    "query": """
+        query getUserBillingSummary($input: UserBillingInput!) {
+          myself {
+            billing(input: $input) {
+              summary {
+                time
+                gpuCloudAmount
+                cpuCloudAmount
+                runpodEndpointAmount
+                serverlessAmount
+                storageAmount
+                __typename
+              }
               __typename
             }
             __typename
           }
-          __typename
         }
-        __typename
-      }
-    }"""
+    """,
 }
-target_endpoints = [
-    "US-NNA-Summarization -fb",
-    "US-NNA-Smart-reply -fb",
-    "US-NNA-Pickup-intent -fb",
-    "EU-LFMH-Summarization -fb",
-    "EU-LFMH-Pickup-intent -fb",
-    "EU-LFMH-Pickup-intent -fb",
-]
 
-get_endpoint_query = {
-    "query": """
-    query Endpoints {
-        myself {
-            endpoints {
-                gpuIds
-                gpuCount
-                allowedCudaVersions
-                id
-                idleTimeout
-                locations
-                name
-                networkVolumeId
-                scalerType
-                scalerValue
-                templateId
-                workersMax
-                workersMin
-                executionTimeoutMs
-            }
-        }
-    }
-    """
-}
 
 def send_post_request_to_runpod(query):
 
@@ -195,13 +109,14 @@ def send_post_request_to_runpod(query):
         result["error_message"] = str(e)
         return result
 
-def get_endpoints_data():
-    result = send_post_request_to_runpod(get_endpoint_query)
-    # print(result)
+
+def get_billing_summary():
+    result = send_post_request_to_runpod(billing_summary_query)
+    #print(result)
 
     if result["data"]:
-        endpoints = result["data"]["data"]["myself"]["endpoints"]
-        return endpoints
+        summary = result["data"]["data"]["myself"]["billing"]["summary"]
+        return summary
     else:
         error_message = result["error_message"]
         error_message = (
@@ -212,81 +127,20 @@ def get_endpoints_data():
         logging.critical(error_message)
         print(error_message)
 
-def update_workers(action, workersMin):
-    endpoints = get_endpoints_data()
 
-    for endpoint in endpoints:
-        endpoint_name = endpoint.get("name", "")
-        if endpoint_name in target_endpoints:
-            endpoint_gpuids = endpoint.get("gpuIds")
-            endpoint_gpucount = endpoint.get("gpuCount")
-            endpoint_allowedcudaversions = endpoint.get("allowedCudaVersions")
-            endpoint_id = endpoint.get("id")
-            endpoint_idletimeout = endpoint.get("idleTimeout")
-            endpoint_locations = endpoint.get("locations")
-            endpoint_networkvolumeid = endpoint.get("networkVolumeId")
-            endpoint_scalertype = endpoint.get("scalerType")
-            endpoint_scalervalue = endpoint.get("scalerValue")
-            endpoint_templateid = endpoint.get("templateId")
-            endpoint_workersmax = endpoint.get("workersMax")
-            endpoint_executiontimeoutms = endpoint.get("executionTimeoutMs")
+def get_todays_bill(summary: dict):
+    todays_bill = max(
+        summary, key=lambda x: datetime.fromisoformat(x["time"].replace("Z", "+00:00"))
+    )
+    return todays_bill
 
-            update_query = {
-                "operationName": "saveEndpoint",
-                "variables": {
-                    "input": {
-                        "gpuIds": endpoint_gpuids,
-                        "gpuCount": endpoint_gpucount,
-                        "allowedCudaVersions": endpoint_allowedcudaversions,
-                        "id": endpoint_id,
-                        "idleTimeout": endpoint_idletimeout,
-                        "locations": endpoint_locations,
-                        "name": endpoint_name,
-                        "networkVolumeId": endpoint_networkvolumeid,
-                        "scalerType": endpoint_scalertype,
-                        "scalerValue": endpoint_scalervalue,
-                        "workersMax": endpoint_workersmax,
-                        "workersMin": workersMin,
-                        "executionTimeoutMs": endpoint_executiontimeoutms,
-                    }
-                },
-                "query": """
-                    mutation saveEndpoint($input: EndpointInput!) {
-                        saveEndpoint(input: $input) {
-                            gpuIds
-                            id
-                            idleTimeout
-                            locations
-                            name
-                            networkVolumeId
-                            scalerType
-                            scalerValue
-                            templateId
-                            userId
-                            workersMax
-                            workersMin
-                            gpuCount
-                            __typename
-                        }
-                    }
-                """,
-            }
 
-            result = send_post_request_to_runpod(update_query)
-            print(result)
+def compute_todays_cost(todays_bill: dict):
+    total_amount = sum(
+        value for key, value in todays_bill.items() if key.endswith("Amount")
+    )
+    return round(total_amount, 2)
 
-            if result["data"]:
-                message = f"*{action}*: Active worker set to `{workersMin}` for the endpoint: `{endpoint_name}`"
-                send_slack_notification(message)
-
-            else:
-                error_message = result["error_message"]
-                error_message = (
-                    f"*{action}*: Failed during the setting active worker to `{workersMin}` for `{endpoint_name}`: "
-                    + error_message
-                )
-                send_slack_notification(error_message)
-                logging.critical(error_message)
 
 def send_slack_notification(message):
     try:
@@ -304,31 +158,97 @@ def send_slack_notification(message):
         else:
             print(f"Slack API Error: {e.response['error']}")
 
+
+def activate_alb_kill_switch(region_name, rule_priority_and_arn):
+    try:
+        # Initialize the ELBv2 client
+        client = boto3.client('elbv2', region_name=region_name)
+
+        response = client.set_rule_priorities(RulePriorities=rule_priority_and_arn)
+
+        print(f"Kill Switch activated!! region_name: {region_name}")
+        return True
+        #print(response)
+
+    except botocore.exceptions.NoCredentialsError:
+        logging.critical("Error: No AWS credentials found. Please configure them using 'aws configure' or set environment variables.")
+
+    except botocore.exceptions.PartialCredentialsError:
+        logging.critical("Error: Incomplete AWS credentials detected. Please check your AWS access key and secret key.")
+
+    except botocore.exceptions.ClientError as e:
+        # Handle specific AWS errors
+        error_code = e.response['Error']['Code']
+        error_message = e.response['Error']['Message']
+        logging.critical(f"AWS ClientError: {error_code} - {error_message}")
+
+    except botocore.exceptions.EndpointConnectionError:
+        logging.critical("Error: Unable to connect to AWS endpoint. Check your internet connection and region settings.")
+
+    except Exception as e:
+        logging.critical(f"An unexpected error occurred: {str(e)}")
+
+    return False
+
+
 def start_monitoring(sleep):
 
+    is_kill_switch_activated = False
+
     while True:
-        result = send_post_request_to_runpod(query)
+        result = get_billing_summary()
 
-        if result["data"]:
-            current_balance = result['data']['data']['myself']['clientBalance']
+        if result:
+            todays_bill = get_todays_bill(result)
+            total_amount = compute_todays_cost(todays_bill)
 
-            if current_balance < runpod_balance_threshold:
-                alert_msg = f"Testing billing alerts: *ALERT!! ALERT!! ALERT!!* \nCurrent runpod balance `${current_balance}` is less than the threshold `${runpod_balance_threshold}`"
-                send_slack_notification(alert_msg)
-                logging.critical(alert_msg)
-                update_workers("deactivate", 0)
+            if total_amount > hard_threshold:
+                alert_message = f"`URGENT: CODE RED` Hard Threshold for a single day spent reached. Amount spent: {total_amount}. Hard Threshod limit is: {hard_threshold}"
+                send_slack_notification(alert_message)
+                logging.critical(alert_message)
+
+                if not is_kill_switch_activated:
+                    # Activate kill switch for LFMH/ICO.
+                    lfmh_kill_switch_status = activate_alb_kill_switch("eu-central-1", lfmh_rule_priority_and_arn)
+                    if lfmh_kill_switch_status:
+                        alert_message = f"LFMH/ICO Application load balancer kill switch activated."
+                        send_slack_notification(alert_message)
+                        logging.critical(alert_message)
+                    else:
+                        alert_message = f"UNABLE to ACTIVATE LFMH/ICO Application load balancer kill switch."
+                        send_slack_notification(alert_message)
+                        logging.critical(alert_message)
+
+                    # Activate kill switch for NNA
+                    nna_kill_switch_status = activate_alb_kill_switch("us-east-1", nna_rule_priority_and_arn)
+                    if nna_kill_switch_status:
+                        alert_message = f"NNA Application load balancer kill switch activated."
+                        send_slack_notification(alert_message)
+                        logging.critical(alert_message)
+                    else:
+                        alert_message = f"UNABLE to ACTIVATE NNA Application load balancer kill switch."
+                        send_slack_notification(alert_message)
+                        logging.critical(alert_message)
+
+                    if lfmh_kill_switch_status and nna_kill_switch_status:
+                        is_kill_switch_activated = True
+
+            elif total_amount > soft_threshold:
+                alert_message = f"`ALERT`: Soft threshold reached. Current Amount spent: `${total_amount}`. Soft threshold is set to: `${soft_threshold}`"
+                send_slack_notification(alert_message)
+                logging.critical(alert_message)
+            else:
+                pass
+
 
         else:
-            error_message = result["error_message"]
+            error_message = f"Error occured: {result}"
             send_slack_notification(error_message)
             logging.critical(error_message)
             print(error_message)
 
-        # sleep for 5 mins.
+        # sleep for 1 mins.
         time.sleep(sleep)
 
 
-start_monitoring(30)
-#data = get_endpoints_data()
-#import json
-#print(json.dumps(data, indent=4))
+start_monitoring(60)
