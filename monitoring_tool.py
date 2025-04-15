@@ -23,7 +23,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    filename="nna_monitoring_new.log",
+    filename="app.log",
     filemode="a",
 )
 
@@ -34,6 +34,7 @@ slack_channel = "nna_mia_alerts"
 slack_lfmh_alert_token = os.environ.get("SLACK_NNA_ALERT_TOKEN")
 username = os.environ.get("USER_NAME")
 password = os.environ.get("PASSWORD")
+jwt_token = os.environ.get("JWT_TOKEN")
 
 client = slack.WebClient(slack_lfmh_alert_token)
 
@@ -42,32 +43,40 @@ def send_request_to_mia(
     data,
     task: str,
 ):
-    endpoint = "/insights"
+    endpoint = "/insights_ico"
     full_url = url + endpoint
     result = {"is_success": False, "error_message": "Default"}
 
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Content-Type": "application/json"
+    }
+
     try:
         response = requests.post(
-            full_url, auth=HTTPBasicAuth(username, password), json=data, timeout=timeout
+            full_url, headers=headers, json=data, timeout=timeout
         )
         response.raise_for_status()
-        response_str = json.dumps(response.json())
+        response_dict = response.json()
+        error = response_dict['res_jobs'][0]['error']
+
+
         # When the request is in 'IN_QUEUE' or 'IN_PROGRESS' state on the runpod side for a
         # very long time then the backend sends HTTP 200 with the error message.
         # For now to capture such scenario a simple string matching will work.
         # Once the 'error' key is added to JSON response for all the tasks then
         # below logic we have to change the below logic.
-        if response.status_code == 200 and "Failed. status code:" not in response_str:
-            logging.info(f"Response: {response.json()}")
-            print(f"Response: {response.json()}")
+        if response.status_code == 200 and not error:
+            logging.info(f"Response: {response_dict}")
+            print(f"Response: {response_dict}")
             result["is_success"] = True
             result["error_message"] = ""
             return result
         else:
-            logging.info(f"Response: {response_str}")
-            print(f"Response: {response_str}")
+            logging.info(f"Response: {response_dict}")
+            print(f"Response: {response_dict}")
             result["is_success"] = False
-            result["error_message"] = response_str
+            result["error_message"] = error
             return result
 
     except requests.exceptions.HTTPError as e:
