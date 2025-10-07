@@ -25,22 +25,12 @@ slack_channel = "runpod_mia_alerts"
 slack_runpod_alert_token = os.environ.get("SLACK_RUNPOD_ALERT_TOKEN")
 soft_threshold = float(os.environ.get("SOFT_THRESHOLD"))
 hard_threshold = float(os.environ.get("HARD_THRESHOLD"))
-lfmh_kill_switch_arn = os.environ.get("LFMH_KILL_SWITCH_ARN")
+lfmh_kill_switch_arn = os.environ.get("LFMH_ICO_RUNPOD_ARN")
 nna_kill_switch_arn = os.environ.get("NNA_KILL_SWITCH_ARN")
 
-lfmh_rule_priority_and_arn = [
-      {
-      'RuleArn': lfmh_kill_switch_arn,
-      'Priority': 1
-      }
-]
+lfmh_rule_priority_and_arn = [{"RuleArn": lfmh_kill_switch_arn, "Priority": 120}]
 
-nna_rule_priority_and_arn = [
-      {
-      'RuleArn': nna_kill_switch_arn,
-      'Priority': 1
-      }
-]
+nna_rule_priority_and_arn = [{"RuleArn": nna_kill_switch_arn, "Priority": 1}]
 
 client = slack.WebClient(slack_runpod_alert_token)
 
@@ -49,11 +39,7 @@ headers = {"content-type": "application/json"}
 
 billing_summary_query = {
     "operationName": "getUserBillingSummary",
-    "variables": {
-        "input": {
-            "granularity": "DAILY"
-        }
-    },
+    "variables": {"input": {"granularity": "DAILY"}},
     "query": """
         query getUserBillingSummary($input: UserBillingInput!) {
           myself {
@@ -112,7 +98,7 @@ def send_post_request_to_runpod(query):
 
 def get_billing_summary():
     result = send_post_request_to_runpod(billing_summary_query)
-    #print(result)
+    # print(result)
 
     if result["data"]:
         summary = result["data"]["data"]["myself"]["billing"]["summary"]
@@ -162,28 +148,34 @@ def send_slack_notification(message):
 def activate_alb_kill_switch(region_name, rule_priority_and_arn):
     try:
         # Initialize the ELBv2 client
-        client = boto3.client('elbv2', region_name=region_name)
+        client = boto3.client("elbv2", region_name=region_name)
 
         response = client.set_rule_priorities(RulePriorities=rule_priority_and_arn)
 
         print(f"Kill Switch activated!! region_name: {region_name}")
         return True
-        #print(response)
+        # print(response)
 
     except botocore.exceptions.NoCredentialsError:
-        logging.critical("Error: No AWS credentials found. Please configure them using 'aws configure' or set environment variables.")
+        logging.critical(
+            "Error: No AWS credentials found. Please configure them using 'aws configure' or set environment variables."
+        )
 
     except botocore.exceptions.PartialCredentialsError:
-        logging.critical("Error: Incomplete AWS credentials detected. Please check your AWS access key and secret key.")
+        logging.critical(
+            "Error: Incomplete AWS credentials detected. Please check your AWS access key and secret key."
+        )
 
     except botocore.exceptions.ClientError as e:
         # Handle specific AWS errors
-        error_code = e.response['Error']['Code']
-        error_message = e.response['Error']['Message']
+        error_code = e.response["Error"]["Code"]
+        error_message = e.response["Error"]["Message"]
         logging.critical(f"AWS ClientError: {error_code} - {error_message}")
 
     except botocore.exceptions.EndpointConnectionError:
-        logging.critical("Error: Unable to connect to AWS endpoint. Check your internet connection and region settings.")
+        logging.critical(
+            "Error: Unable to connect to AWS endpoint. Check your internet connection and region settings."
+        )
 
     except Exception as e:
         logging.critical(f"An unexpected error occurred: {str(e)}")
@@ -209,24 +201,32 @@ def start_monitoring(sleep):
 
                 if not is_kill_switch_activated:
                     # Activate kill switch for LFMH/ICO.
-                    lfmh_kill_switch_status = activate_alb_kill_switch("eu-central-1", lfmh_rule_priority_and_arn)
+                    lfmh_kill_switch_status = activate_alb_kill_switch(
+                        "eu-central-1", lfmh_rule_priority_and_arn
+                    )
                     if lfmh_kill_switch_status:
-                        alert_message = f"LFMH/ICO Application load balancer kill switch activated."
+                        alert_message = (
+                            f"Runpod LFMH/ICO existing feature kill switch activated."
+                        )
                         send_slack_notification(alert_message)
                         logging.critical(alert_message)
                     else:
-                        alert_message = f"UNABLE to ACTIVATE LFMH/ICO Application load balancer kill switch."
+                        alert_message = f"Runpod UNABLE to ACTIVATE LFMH/ICO existing feature kill switch."
                         send_slack_notification(alert_message)
                         logging.critical(alert_message)
 
                     # Activate kill switch for NNA
-                    nna_kill_switch_status = activate_alb_kill_switch("us-east-1", nna_rule_priority_and_arn)
+                    nna_kill_switch_status = activate_alb_kill_switch(
+                        "us-east-1", nna_rule_priority_and_arn
+                    )
                     if nna_kill_switch_status:
-                        alert_message = f"NNA Application load balancer kill switch activated."
+                        alert_message = (
+                            f"Runpod NNA existing feature kill switch activated."
+                        )
                         send_slack_notification(alert_message)
                         logging.critical(alert_message)
                     else:
-                        alert_message = f"UNABLE to ACTIVATE NNA Application load balancer kill switch."
+                        alert_message = f"Runpod UNABLE to ACTIVATE NNA existing feature kill switch."
                         send_slack_notification(alert_message)
                         logging.critical(alert_message)
 
@@ -239,7 +239,6 @@ def start_monitoring(sleep):
                 logging.critical(alert_message)
             else:
                 pass
-
 
         else:
             error_message = f"Error occured: {result}"
