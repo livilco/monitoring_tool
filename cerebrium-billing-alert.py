@@ -105,6 +105,7 @@ def get_today_total_cost_dollars(data: dict) -> float:
             error_message = f"Cerebrium No cost data found for date {today_str}"
             send_slack_notification(error_message)
             logging.critical(error_message)
+            return 0.0
 
         total_cost_cents = costs[today_str].get("total_cost_cents", 0.0)
         return round(total_cost_cents / 100, 2)  # Convert cents to dollars
@@ -124,7 +125,7 @@ def send_slack_notification(message):
             # Attempt to join the channel first
             try:
                 client.conversations_join(channel=slack_channel)
-                client.chat_postMessage(channel=slack_channel, text=error_message)
+                client.chat_postMessage(channel=slack_channel, text=message)
             except slack.errors.SlackApiError as join_error:
                 print(
                     f"Failed to join and send message: {join_error.response['error']}"
