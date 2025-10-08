@@ -21,27 +21,45 @@ logging.basicConfig(
     filemode="a",
 )
 
-token = os.environ.get("API_KEY")
+token_p83a7fa9e = os.environ.get("API_KEY_P83A7FA9E")
+token_p87ef9251 = os.environ.get("API_KEY_P87EF9251")
+token_pde09db61 = os.environ.get("API_KEY_PDE09DB61")
 slack_channel = "cerebrium-monitoring"
 slack_runpod_alert_token = os.environ.get("SLACK_ALERT_TOKEN")
 soft_threshold = float(os.environ.get("SOFT_THRESHOLD"))
 hard_threshold = float(os.environ.get("HARD_THRESHOLD"))
 
-lfmh_kill_switch_arn = os.environ.get("LFMH_KILL_SWITCH_ARN")
-nna_kill_switch_arn = os.environ.get("NNA_KILL_SWITCH_ARN")
 
-lfmh_rule_priority_and_arn = [{"RuleArn": lfmh_kill_switch_arn, "Priority": 5}]
+cerebrium_existing_feat_arn = os.environ.get("CEREBRIUM_EXISTING_FEATURE")
+cerebrium_new_feat_arn = os.environ.get("CEREBRIUM_NEW_FEATURE")
 
-nna_rule_priority_and_arn = [{"RuleArn": nna_kill_switch_arn, "Priority": 5}]
+cerebrium_existing_rule_priority_and_arn = [{"RuleArn": cerebrium_existing_feat_arn, "Priority": 150}]
+cerebrium_new_feat_rule_priority_and_arn = [{"RuleArn": cerebrium_new_feat_arn, "Priority": 160}]
 
 client = slack.WebClient(slack_runpod_alert_token)
 
-url = "https://rest.cerebrium.ai/v2/projects/p-83a7fa9e/apps/p-83a7fa9e-content-importance/cost"
+url_content_impo = "https://rest.cerebrium.ai/v2/projects/p-83a7fa9e/apps/p-83a7fa9e-content-importance/cost"
+url_cmd_interpreter = "https://rest.cerebrium.ai/v2/projects/p-83a7fa9e/apps/p-83a7fa9e-command-interpreter/cost"
 
-headers = {"Authorization": f"Bearer {token}"}
+url_message_improv = "https://rest.cerebrium.ai/v2/projects/p-de09db61/apps/p-de09db61-message-improvisation/cost"
+
+url_smart_reply = (
+    "https://rest.cerebrium.ai/v2/projects/p-87ef9251/apps/p-87ef9251-smart-reply/cost"
+)
+url_summarization = "https://rest.cerebrium.ai/v2/projects/p-87ef9251/apps/p-87ef9251-summarization/cost"
+
+app_dict = {
+    url_content_impo: token_p83a7fa9e,
+    url_cmd_interpreter: token_p83a7fa9e,
+    url_message_improv: token_pde09db61,
+    url_smart_reply: token_p87ef9251,
+    url_summarization: token_p87ef9251,
+}
 
 
-def send_post_request_to_cerebrium(url):
+def send_post_request_to_cerebrium(url, token):
+
+    headers = {"Authorization": f"Bearer {token}"}
 
     result = {"data": None, "error_message": ""}
 
@@ -159,61 +177,62 @@ def start_monitoring(sleep):
     is_kill_switch_activated = False
 
     while True:
-        result = send_post_request_to_cerebrium(url)
-        # print(result)
-
-        if result:
-            total_amount = get_today_total_cost_dollars(result["data"])
-            # print(f"{total_amount=}")
-
-            if total_amount > hard_threshold:
-                alert_message = f"`URGENT: CODE RED` Hard Threshold for a single day spent reached. Amount spent: {total_amount}. Hard Threshod limit is: {hard_threshold}"
-                # print(f"{alert_message=}")
-                send_slack_notification(alert_message)
-                logging.critical(alert_message)
-
-                if not is_kill_switch_activated:
-                    # Activate Cerebrium kill switch for LFMH/ICO.
-                    lfmh_kill_switch_status = activate_alb_kill_switch(
-                        "eu-central-1", lfmh_rule_priority_and_arn
-                    )
-                    if lfmh_kill_switch_status:
-                        alert_message = f"Cerebrium LFMH/ICO Application load balancer kill switch activated."
-                        send_slack_notification(alert_message)
-                        logging.critical(alert_message)
-                    else:
-                        alert_message = f"Cerebrium UNABLE to ACTIVATE LFMH/ICO Application load balancer kill switch."
-                        send_slack_notification(alert_message)
-                        logging.critical(alert_message)
-
-                    # Activate Cerebrium kill switch for NNA
-                    nna_kill_switch_status = activate_alb_kill_switch(
-                        "us-east-1", nna_rule_priority_and_arn
-                    )
-                    if nna_kill_switch_status:
-                        alert_message = f"Cerebrium NNA Application load balancer kill switch activated."
-                        send_slack_notification(alert_message)
-                        logging.critical(alert_message)
-                    else:
-                        alert_message = f"Cerebrium UNABLE to ACTIVATE NNA Application load balancer kill switch."
-                        send_slack_notification(alert_message)
-                        logging.critical(alert_message)
-
-                    if lfmh_kill_switch_status and nna_kill_switch_status:
-                        is_kill_switch_activated = True
-
-            elif total_amount > soft_threshold:
-                alert_message = f"`ALERT`: Soft threshold reached. Current Amount spent: `${total_amount}`. Soft threshold is set to: `${soft_threshold}`"
-                send_slack_notification(alert_message)
-                logging.critical(alert_message)
+        total_cost = 0.0
+        for url, token in app_dict.items():
+            result = send_post_request_to_cerebrium(url, token)
+            # print(result)
+            if result:
+                app_cost = get_today_total_cost_dollars(result["data"])
+                total_cost = total_cost + app_cost
+            # print(f"{total_cost=}")
             else:
-                pass
+                error_message = f"Error occured: {result}"
+                send_slack_notification(error_message)
+                logging.critical(error_message)
+                print(error_message)
 
+        if total_cost > hard_threshold:
+            alert_message = f"`URGENT: CODE RED` Hard Threshold for a single day spent reached. Amount spent: {total_cost}. Hard Threshod limit is: {hard_threshold}"
+            # print(f"{alert_message=}")
+            send_slack_notification(alert_message)
+            logging.critical(alert_message)
+
+            if not is_kill_switch_activated:
+                # Activate cerebrium kill switch for Existing feature LFMH/ICO.
+                existing_feat_kill_switch_status = activate_alb_kill_switch(
+                    "eu-central-1", cerebrium_existing_rule_priority_and_arn
+                )
+                if existing_feat_kill_switch_status:
+                    alert_message = f"Cerebrium LFMH/ICO existing feature kill switch activated."
+                    send_slack_notification(alert_message)
+                    logging.critical(alert_message)
+                else:
+                    alert_message = f"Cerebrium UNABLE to ACTIVATE LFMH/ICO existing feature kill switch."
+                    send_slack_notification(alert_message)
+                    logging.critical(alert_message)
+
+                # Activate Cerebrium kill switch for new features.
+                new_feat_kill_switch_status = activate_alb_kill_switch(
+                    "eu-central-1", cerebrium_new_feat_rule_priority_and_arn
+                )
+                if new_feat_kill_switch_status:
+                    alert_message = f"Cerebrium new feature kill switch activated."
+                    send_slack_notification(alert_message)
+                    logging.critical(alert_message)
+                else:
+                    alert_message = f"Cerebrium UNABLE to ACTIVATE new feature kill switch."
+                    send_slack_notification(alert_message)
+                    logging.critical(alert_message)
+
+                if existing_feat_kill_switch_status and new_feat_kill_switch_status:
+                    is_kill_switch_activated = True
+
+        elif total_cost > soft_threshold:
+            alert_message = f"`ALERT`: Soft threshold reached. Current Amount spent: `${total_cost}`. Soft threshold is set to: `${soft_threshold}`"
+            send_slack_notification(alert_message)
+            logging.critical(alert_message)
         else:
-            error_message = f"Error occurred: {result}"
-            send_slack_notification(error_message)
-            logging.critical(error_message)
-            print(error_message)
+            pass
 
         # sleep for 1 mins.
         time.sleep(sleep)
