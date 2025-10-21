@@ -42,6 +42,7 @@ url_content_impo = "https://rest.cerebrium.ai/v2/projects/p-83a7fa9e/apps/p-83a7
 url_cmd_interpreter = "https://rest.cerebrium.ai/v2/projects/p-83a7fa9e/apps/p-83a7fa9e-command-interpreter/cost"
 
 url_message_improv = "https://rest.cerebrium.ai/v2/projects/p-de09db61/apps/p-de09db61-message-improvisation/cost"
+url_email_improv = "https://rest.cerebrium.ai/v2/projects/p-de09db61/apps/p-de09db61-email-improvisation/cost"
 
 url_smart_reply = (
     "https://rest.cerebrium.ai/v2/projects/p-87ef9251/apps/p-87ef9251-smart-reply/cost"
@@ -52,6 +53,7 @@ app_dict = {
     url_content_impo: token_p83a7fa9e,
     url_cmd_interpreter: token_p83a7fa9e,
     url_message_improv: token_pde09db61,
+    url_email_improv: token_pde09db61,
     url_smart_reply: token_p87ef9251,
     url_summarization: token_p87ef9251,
 }
