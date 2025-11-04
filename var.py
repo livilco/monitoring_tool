@@ -15,4 +15,8 @@ email_generation_input = "write an email to Jhon asking for 2 days leaves."
 
 email_improvisation_input = "Notify a vendor that we’ve decided not to renew their contract after this quarter."
 
+command_interpreter_input = "Tell Pater over slack to bring the bat for tomorrow's match."
+
+content_importance_input = "Hi John, When can we meet to discuss the urgent project?"
+
 # Summarization, Message Smart reply, Email Smart reply, Message generation, Email generation
