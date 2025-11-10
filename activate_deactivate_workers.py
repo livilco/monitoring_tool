@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    filename="runpod_activate_deactivate.log",
+    filename="ico_runpod_activate_deactivate.log",
     filemode="a",
 )
 
@@ -25,11 +25,12 @@ client = slack.WebClient(slack_runpod_alert_token)
 url = f"https://api.runpod.io/graphql?api_key={api_key}"
 headers = {"content-type": "application/json"}
 
-target_endpoints = [
-    "US_NNA_Summarization_Production -fb",
-    "US_NNA_Smart-reply_Production -fb",
-    "US_NNA_NEW_Pickup_Intent_Production -fb",
-]
+# Read the variable as a JSON string
+target_endpoints_str = os.getenv("TARGET_ENDPOINTS")
+
+# Parse JSON into a Python list
+target_endpoints = json.loads(target_endpoints_str)
+print(target_endpoints)
 
 get_endpoint_query = {
     "query": """
@@ -191,6 +192,7 @@ def update_workers(action, workersMin):
             if result["data"]:
                 message = f"*{action}*: Active worker set to `{workersMin}` for the endpoint: `{endpoint_name}`"
                 send_slack_notification(message)
+                logging.info(message)
 
             else:
                 error_message = result["error_message"]
@@ -229,4 +231,6 @@ if __name__ == "__main__":
         update_workers(args.action, workersMin)
 
     except Exception as e:
-        print(f"An unexpected error occurred during: {e}")
+        message = f"An unexpected error occurred during: {e}"
+        print(message)
+        logging.critical(message)
