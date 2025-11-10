@@ -29,8 +29,16 @@ headers = {"content-type": "application/json"}
 target_endpoints_str = os.getenv("TARGET_ENDPOINTS")
 
 # Parse JSON into a Python list
-target_endpoints = json.loads(target_endpoints_str)
-print(target_endpoints)
+try:
+    target_endpoints = json.loads(target_endpoints_str)
+    print(target_endpoints)
+    logging.info(f"Target endpoints: {target_endpoints}")
+except (json.JSONDecodeError, TypeError) as e:
+    err_msg = f"Failed to parse TARGET_ENDPOINTS environment variable: {e}"
+    logging.critical(err_msg)
+    print(err_msg)
+    raise
+
 
 get_endpoint_query = {
     "query": """

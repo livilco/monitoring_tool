@@ -2,7 +2,7 @@
 
 LOGFILE="/tmp/ico_cron_debug.log"
 PYTHON="/home/ubuntu/ico-activate-deactivate/env/bin/python"
-SCRIPT="/home/ubuntu/ico-activate-deactivate/ico_activate_deactivate_workers.py"
+SCRIPT="/home/ubuntu/ico-activate-deactivate/activate_deactivate_workers.py"
 ACTION=$1
 
 echo "[$(date)] Script triggered by cron with action: $ACTION" >> "$LOGFILE"
