@@ -21,7 +21,7 @@ fi
 
 # Check if COOLDOWNPERIOD is >= 30
 if [ "$COOLDOWNPERIOD" -lt 30 ]; then
-    echo "[$(date)] ERROR: Cooldown period must be greater than 30 (provided: $COOLDOWNPERIOD)." >> "$LOGFILE"
+    echo "[$(date)] ERROR: Cooldown period must be at least 30 (provided: $COOLDOWNPERIOD)." >> "$LOGFILE"
     exit 1
 fi
 

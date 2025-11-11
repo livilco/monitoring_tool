@@ -24,6 +24,32 @@ smart_reply_url = os.environ.get("SMART_REPLY_URL")
 api_key_PDE09DB61 = os.environ.get("API_KEY_PDE09DB61")
 api_key_PF875AC4E = os.environ.get("API_KEY_PF875AC4E")
 
+
+# Validate required environment variables
+def validate_env_vars(required_vars):
+    missing = []
+    for var_name, var_value in required_vars.items():
+        if var_value is None or str(var_value).strip() == "":
+            missing.append(var_name)
+    if missing:
+        err_msg = f"Missing required environment variables: {', '.join(missing)}"
+        logging.critical(err_msg)
+        print(err_msg)
+        exit(1)
+
+
+validate_env_vars(
+    {
+        "SLACK_CEREBRIUM_TOKEN": slack_cerebrium_token,
+        "MESSAGE_IMPROV_URL": message_improv_url,
+        "EMAIL_IMPROV_URL": email_improv_url,
+        "SUMMARIZATION_URL": summarization_url,
+        "SMART_REPLY_URL": smart_reply_url,
+        "API_KEY_PDE09DB61": api_key_PDE09DB61,
+        "API_KEY_PF875AC4E": api_key_PF875AC4E,
+    }
+)
+
 client = slack.WebClient(slack_cerebrium_token)
 
 app_dict = {
@@ -34,20 +60,20 @@ app_dict = {
 }
 
 
-def update_cooldown_period(coldown_period):
+def update_cooldown_period(cooldown_period):
     for app_url, api_key in app_dict.items():
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        payload = {"cooldownPeriodSeconds": coldown_period}
+        payload = {"cooldownPeriodSeconds": cooldown_period}
         try:
             response = requests.patch(app_url, json=payload, headers=headers)
             response.raise_for_status()
-            #print(f"Response from {app_url}: {response.status_code} - {response.text}")
+            # print(f"Response from {app_url}: {response.status_code} - {response.text}")
 
             if response.status_code == 200:
-                success_msg = f"Successfully updated cooldown period to `{coldown_period} seconds` for {app_url}"
+                success_msg = f"Successfully updated cooldown period to `{cooldown_period} seconds` for {app_url}"
                 logging.info(success_msg)
                 print(success_msg)
                 send_slack_notification(success_msg)
@@ -114,7 +140,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(
             description="Update Cerebrium Cooldown Period."
         )
-        # add condition that cooldown period should be grater than 0.
+
         parser.add_argument(
             "--cooldown-period",
             type=positive_int,
