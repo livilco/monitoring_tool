@@ -49,17 +49,15 @@ def send_request_to_mia(
 
     headers = {
         "Authorization": f"Bearer {jwt_token}",
-        "Content-Type": "application/json"
+        "X-provider": "runpod",
+        "Content-Type": "application/json",
     }
 
     try:
-        response = requests.post(
-            full_url, headers=headers, json=data, timeout=timeout
-        )
+        response = requests.post(full_url, headers=headers, json=data, timeout=timeout)
         response.raise_for_status()
         response_dict = response.json()
-        error = response_dict['res_jobs'][0]['error']
-
+        error = response_dict["res_jobs"][0]["error"]
 
         # When the request is in 'IN_QUEUE' or 'IN_PROGRESS' state on the runpod side for a
         # very long time then the backend sends HTTP 200 with the error message.
@@ -148,6 +146,7 @@ def check_smart_reply(model, task):
 
     return send_request_to_mia(data, task)
 
+
 def check_email_smart_reply(model, task):
     req_id = 1
     data = {
@@ -162,6 +161,7 @@ def check_email_smart_reply(model, task):
     }
 
     return send_request_to_mia(data, task)
+
 
 def check_message_generation(model, task):
     req_id = 1
@@ -210,6 +210,7 @@ def check_email_generation(model, task):
 
     return send_request_to_mia(data, task)
 
+
 def check_email_improvisation(model, task):
     req_id = 1
     data = {
@@ -224,6 +225,7 @@ def check_email_improvisation(model, task):
     }
 
     return send_request_to_mia(data, task)
+
 
 def send_slack_notification(error_message):
     try:
@@ -282,7 +284,9 @@ def start_monitoring(sleep):
 
         result = check_message_improvisation("jupiter-2", "message-improvisation")
         if not result["is_success"]:
-            message = f"Message improvisation is not working: {result['error_message']} "
+            message = (
+                f"Message improvisation is not working: {result['error_message']} "
+            )
             send_slack_notification(message)
 
         time.sleep(sleep)
@@ -300,6 +304,8 @@ def start_monitoring(sleep):
             send_slack_notification(message)
 
         time.sleep(sleep)
+
+
 # send_slack_notification("This is a test message")
 
 start_monitoring(300)
