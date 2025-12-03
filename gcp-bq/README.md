@@ -12,3 +12,32 @@ This folder contains two BigQuery SQL queries and companion notebooks that pull 
 
 #NOTE: Both the notebooks runs via GCP scheduler. 
 
+## Upload .sql file in GCP Bucket
+1. Bump the SQL File Version
+
+Whenever you add new code to an existing .sql file, increment its version number by 1.
+Examples:
+
+V12_user_journey_report.sql → V13_user_journey_report.sql
+
+New_Users_V05.sql → New_Users_V06.sql
+
+2. Upload the updated .sql file to the appropriate bucket path:
+   | SQL File Type         | GCP Bucket Path                                |
+   |`user_journey_report` --> `ico_user_journey_reports/user_journey_query` |
+   |`New_Users_report`    --> `ico_new_users_report/new_users_query`        |
+
+
+
+3. Update the corresponding Jupyter notebook depending on which .sql file was modified.
+   In New_Users_Reports.ipynb
+   ```
+   blob_name = 'new_users_query/<sql file>'
+   ```
+
+   In New_User_Journey_Report.ipynb
+   ```
+   blob_name = 'user_journey_query/<sql file>'
+   ```
+
+   Replace `<sql_file>` with the updated versioned SQL filename.
